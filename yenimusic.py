@@ -14,13 +14,28 @@ buzzer = GPIO.PWM(BUZZER_PIN, 1000)  # 1 kHz PWM sinyali
 
 # Notalar ve şarkılar
 tones = {
-    "E5": 659, "G5": 784, "A5": 880, "B5": 987, "P": 0
+    "C4": 262,  # Do
+    "D4": 294,  # Re
+    "E4": 330,  # Mi
+    "F4": 349,  # Fa
+    "G4": 392,  # Sol
+    "A4": 440,  # La
+    "B4": 494,  # Si
+    "C5": 523,  # Do (yukarı oktav)
+    "P": 0      # Sessizlik
+    "E5": 659,
+    "G5":784,
+    "A5":880,
+    "B5":987,
+    
+    
 }
 
 songs = {
-    "Happy": ["E5", "G5", "A5", "P", "E5", "G5", "B5", "A5", "P", "E5", "G5", "A5", "P", "G5", "E5"],
-    "Sad": ["C4", "D4", "E4", "F4", "P", "F4", "E4", "D4", "C4"],
-    "Angry": ["C5", "B4", "A4", "G4", "F4", "E4", "P", "C5"]
+    "Happy": ["E5", "G5", "A5", "P", "E5", "G5", "B5", "A5", "P"],
+    "Sad": ["F4", "F4", "E4", "E4", "D4", "D4", "C4", "P"],
+    "Angry": ["C4", "C4", "G4", "G4", "A4", "A4", "G4", "P"],
+    "Suprise":["F4", "F4", "E4", "E4", "D4", "D4", "C4" ]
 }
 
 # Yüz tanıma modeli ve sınıflandırıcı
