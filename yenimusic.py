@@ -1,68 +1,35 @@
 import cv2
 import numpy as np
-from time import sleep
+import tensorflow as tf
+from keras.models import load_model
+from picamera2 import Picamera2
 import RPi.GPIO as GPIO
+from time import sleep
 
-# Buzzer'ın GPIO4'e bağlı olduğunu varsayıyoruz
+# Buzzer ayarları
 BUZZER_PIN = 4
-
-# GPIO pinini ve PWM'i yapılandırıyoruz
-GPIO.setmode(GPIO.BCM)  # BCM pin numaralandırma
+GPIO.setmode(GPIO.BCM)
 GPIO.setup(BUZZER_PIN, GPIO.OUT)
-buzzer = GPIO.PWM(BUZZER_PIN, 1000)  # 1 kHz frekansta PWM sinyali üret
+buzzer = GPIO.PWM(BUZZER_PIN, 1000)  # 1 kHz PWM sinyali
 
-# Tonlar ve şarkılar
+# Notalar ve şarkılar
 tones = {
-    "E5": 659, "G5": 784, "A5": 880, "P": 0,  # Örnek olarak sadece 3 nota yer verdim
+    "E5": 659, "G5": 784, "A5": 880, "P": 0
 }
 
-Happy_song = ["E5", "G5", "A5", "P", "E5", "G5", "B5", "A5", "P", "E5", "G5", "A5", "P", "G5", "E5"]
+happy_song = ["E5", "G5", "A5", "P", "E5", "G5", "B5", "A5", "P", "E5", "G5", "A5", "P", "G5", "E5"]
 sad_song = ["E5", "E5", "E5", "P", "E5", "G5", "B5", "A5", "P", "E5", "G5", "A5", "P", "G5", "E5"]
 angry_song = ["E5", "P", "G5", "P", "A5", "P", "E5", "P", "G5", "P", "B5", "P", "A5", "P", "E5", "P", "G5", "A5", "P", "G5", "E5"]
 
-# Yüz tanıma için haar cascade ve DNN modeli kullanıyoruz
+# Yüz tanıma modeli ve sınıflandırıcı
+model = load_model('/home/pi/FER_model.h5')  # Model yolunu doğru ayarlayın
+emotion_labels = ['Angry', 'Disgust', 'Fear', 'Happy', 'Sad', 'Surprise', 'Neutral']
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 
-# Duygu analizi için OpenCV DNN kullanmak
-model = cv2.dnn.readNetFromONNX('emotion_model.onnx')  # Önceden eğitilmiş bir ONNX model dosyası
-
-emotion_labels = ['Angry', 'Disgust', 'Fear', 'Happy', 'Sad', 'Surprise', 'Neutral']
-
-# Yüz tespiti ve duygu analizi fonksiyonu
-def get_emotion_from_image(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
-    
-    predicted_emotion = "Neutral"
-    
-    if len(faces) == 0:
-        return image, predicted_emotion
-    
-    for (x, y, w, h) in faces:
-        face = image[y:y+h, x:x+w]
-        blob = cv2.dnn.blobFromImage(face, 1.0 / 255, (48, 48), (0, 0, 0), swapRB=True, crop=False)
-        model.setInput(blob)
-        emotion_predictions = model.forward()
-        max_index = np.argmax(emotion_predictions)
-        predicted_emotion = emotion_labels[max_index]
-        
-        # Yüzü çizme ve duyguyu yazma
-        cv2.rectangle(image, (x, y), (x+w, y+h), (0, 255, 0), 2)
-        cv2.putText(image, predicted_emotion, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
-        
-    return image, predicted_emotion
-
-# Kamera modülünden görüntü almak için OpenCV'yi kullanıyoruz
-cap = cv2.VideoCapture(0)  # 0 numaralı cihazda kamera var (kamera modülü)
-
-if not cap.isOpened():
-    print("Kamera açılamadı!")
-    exit()
-
-# Buzzer ve şarkı çalma fonksiyonları
+# Buzzer fonksiyonları
 def playtone(frequency):
     if frequency != 0:
-        buzzer.start(50)  # %50 duty cycle ile PWM başlat
+        buzzer.start(50)  # %50 duty cycle
         buzzer.ChangeFrequency(frequency)
     else:
         buzzer.stop()
@@ -79,41 +46,69 @@ def playsong(mysong):
         sleep(0.2)
     bequiet()
 
-# Gerçek zamanlı görüntü işleme ve duygu tespiti
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        print("Kamera görüntüsü alınamadı!")
-        break
+# Duygu tespiti fonksiyonu
+def get_emotion_from_image(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
 
-    # Duyguyu tespit etme
-    image, predicted_emotion = get_emotion_from_image(frame)
+    if len(faces) == 0:
+        return image, "No face detected"
 
-    # Hangi şarkıyı çalacağına karar verme
-    if predicted_emotion == 'Happy':
-        song = Happy_song
-    elif predicted_emotion == 'Sad':
-        song = sad_song
-    elif predicted_emotion == 'Angry':
-        song = angry_song
-    else:
-        song = []
+    for (x, y, w, h) in faces:
+        face = gray[y:y+h, x:x+w]
+        face = cv2.resize(face, (48, 48))
+        face = face.astype('float32') / 255
+        face = np.expand_dims(face, axis=-1)
+        face = np.expand_dims(face, axis=0)
 
-    # Şarkıyı çalma
-    playsong(song)
+        emotion_predictions = model.predict(face)
+        max_index = np.argmax(emotion_predictions[0])
+        predicted_emotion = emotion_labels[max_index]
 
-    # Yüzü ve duygu etiketini ekranda gösterme
-    cv2.imshow("Emotion Detection", image)
+        cv2.rectangle(image, (x, y), (x+w, y+h), (0, 255, 0), 2)
+        cv2.putText(image, predicted_emotion, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
 
-    # 'q' tuşuna basılınca çık
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+        return image, predicted_emotion
+    return image, "No emotion detected"
 
-# Kamera ve OpenCV kaynaklarını serbest bırakma
-cap.release()
-cv2.destroyAllWindows()
+# Kamera kurulumu
+picam2 = Picamera2()
+picam2.configure(picam2.create_preview_configuration())
+picam2.start()
 
-# Buzzer'ı kapatma
-buzzer.stop()
-GPIO.cleanup()
+# Gerçek zamanlı görüntü işleme
+try:
+    while True:
+        frame = picam2.capture_array()
+        image, predicted_emotion = get_emotion_from_image(frame)
 
+        # Şarkı seçimi
+        if predicted_emotion == 'Happy':
+            song = happy_song
+        elif predicted_emotion == 'Sad':
+            song = sad_song
+        elif predicted_emotion == 'Angry':
+            song = angry_song
+        else:
+            song = []
+
+        # Şarkıyı çalma
+        if song:
+            playsong(song)
+
+        # Görüntüyü ekranda göster
+        cv2.imshow("Emotion Detection", image)
+
+        # Çıkış için 'q' tuşu
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+except KeyboardInterrupt:
+    print("Çıkış yapılıyor...")
+
+finally:
+    # Kaynakları temizle
+    picam2.close()
+    buzzer.stop()
+    GPIO.cleanup()
+    cv2.destroyAllWindows()
